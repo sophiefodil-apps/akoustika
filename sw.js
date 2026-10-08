@@ -1,5 +1,5 @@
 const PREFIX = "pegp-akoustika-";
-const CACHE = PREFIX + "v3";
+const CACHE = PREFIX + "v5";
 const ASSETS = ["./", "./index.html", "./akoustika.webmanifest", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

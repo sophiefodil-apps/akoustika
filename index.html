@@ -83,6 +83,12 @@ button{font:inherit;cursor:pointer;border:none}
 .sort .s{font-size:11.5px;color:#8fa9b2;margin-top:2px}
 .sort.pick{border-color:#fff;background:#2a5664;box-shadow:0 0 0 2px var(--accent) inset}
 .sort.pick .s{color:#fff}
+.jump{display:flex;gap:10px;margin-top:10px}
+.jump input{flex:1;min-width:0;background:var(--bg2);border:1px solid var(--line);border-radius:9px;
+  color:#e4eef1;font:inherit;font-size:16px;padding:11px 12px}
+.jump input::placeholder{color:#7e99a2}
+.jump input:focus{outline:none;border-color:var(--accent)}
+.jump button{background:var(--accent);color:#24180a;font-weight:700;border-radius:9px;padding:11px 18px;font-size:15px}
 .nav{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:12px}
 .nav button{background:var(--bg2);border:1px solid var(--line);color:#cfe0e5;
   padding:11px 16px;border-radius:9px;font-size:15px}
@@ -147,6 +153,11 @@ footer .acts button{background:none;color:#9db6bf;text-decoration:underline;padd
   </div>
 </div>
 
+<div class="jump">
+  <input id="jump-n" type="number" inputmode="numeric" min="1" max="50" placeholder="Θέμα 1–50">
+  <button id="jump-go">Go to Θέμα</button>
+</div>
+
 <div class="nav">
   <button id="back">&larr; Back</button>
   <button id="shuffle">Shuffle</button>
@@ -180,7 +191,8 @@ var N = TOPICS.length;
    at[p]     : the topic pile p was on when you left it
    prog[p]   : half-finished topic in pile p: {n, step, ans:[...], pick}
    pile      : the pile you are studying                                            */
-var piles = {}, order = {}, at = {}, prog = {}, pile = 'live';
+var piles = {}, order = {}, at = {}, prog = {}, held = {}, pile = 'live';
+/* held[n]: a half-done topic you left via Skip/Back/Go to — resumes when you come back to it */
 var queue = [];          /* topics currently in this pile, in this pile's order */
 var cur = null;          /* {n, step, ans, pick} for the topic on screen */
 
@@ -203,7 +215,7 @@ function load(){
     if(raw){
       var d = JSON.parse(raw);
       piles = d.piles || {}; order = d.order || {}; at = d.at || {};
-      prog = d.prog || {}; pile = d.pile || 'live';
+      prog = d.prog || {}; held = d.held || {}; pile = d.pile || 'live';
     }
   }catch(e){}
   fix();
@@ -216,7 +228,7 @@ function fix(){
 function save(){
   if(cur) prog[pile] = cur;
   try{
-    localStorage.setItem(KEY, JSON.stringify({piles:piles, order:order, at:at, prog:prog, pile:pile}));
+    localStorage.setItem(KEY, JSON.stringify({piles:piles, order:order, at:at, prog:prog, held:held, pile:pile}));
   }catch(e){}
 }
 
@@ -238,12 +250,15 @@ function nextFrom(n, skipSelf){
   }
   return 0;
 }
+function stash(p){ if(p && p.n && p.ans && p.ans.length) held[p.n] = p; }
 function open(n){
   if(!n){ cur = null; return; }
   at[pile] = n;
   var p = prog[pile];
+  if(!(p && p.n === n && p.ans && p.ans.length <= 10)){ stash(p); p = held[n]; }
   if(p && p.n === n && p.ans && p.ans.length <= 10) cur = p;
   else cur = {n:n, step:0, ans:[], pick:null};
+  delete held[n];
 }
 /* enter the current pile at the point you left it */
 function enter(){
@@ -346,7 +361,7 @@ function goNext(){
   /* confirm: file the whole topic, then move on */
   var n = cur.n;
   piles[n] = cur.pick || 'important';
-  delete prog[pile]; cur = null;
+  delete prog[pile]; delete held[n]; cur = null;
   buildQueue();
   open(nextFrom(n, true));
   save(); render(); window.scrollTo(0,0);
@@ -356,18 +371,29 @@ function step(d){            /* Back / Skip between topics without filing */
   var i = queue.indexOf(cur ? cur.n : 0);
   var n = queue[(i + d + queue.length) % queue.length];
   if(cur && n === cur.n) return;
-  delete prog[pile]; cur = null;
+  stash(cur); delete prog[pile]; cur = null;
   open(n); save(); render(); window.scrollTo(0,0);
 }
 
 document.getElementById('go').addEventListener('click', goNext);
 document.getElementById('skip').addEventListener('click', function(){ step(1); });
+function jump(){
+  var box = document.getElementById('jump-n'), n = parseInt(box.value, 10);
+  if(!(n >= 1 && n <= N)){ box.value = ''; box.placeholder = 'Only 1–50'; box.focus(); return; }
+  box.value = ''; box.blur();
+  save();                                   /* keep your place in the pile you are leaving */
+  pile = piles[n];
+  cur = null; buildQueue(); open(n);
+  save(); render(); window.scrollTo(0,0);
+}
+document.getElementById('jump-go').addEventListener('click', jump);
+document.getElementById('jump-n').addEventListener('keydown', function(e){ if(e.key === 'Enter') jump(); });
 document.getElementById('back').addEventListener('click', function(){ step(-1); });
 document.getElementById('shuffle').addEventListener('click', function(){
   if(!confirm('Shuffle the order of ' + NAMES[pile] + ' and start it from the top?')) return;
   var o = seq();
   for(var i=o.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var x=o[i]; o[i]=o[j]; o[j]=x; }
-  order[pile] = o; delete prog[pile]; delete at[pile]; cur = null;
+  order[pile] = o; stash(cur); delete prog[pile]; delete at[pile]; cur = null;
   enter(); save(); render();
 });
 [].forEach.call(document.querySelectorAll('.pile'), function(b){
@@ -388,7 +414,7 @@ document.getElementById('shuffle').addEventListener('click', function(){
 document.getElementById('backup').addEventListener('click', function(){
   save();
   var txt = JSON.stringify({app:'pegp-akoustika', saved:new Date().toISOString(),
-    piles:piles, order:order, at:at, prog:prog, pile:pile});
+    piles:piles, order:order, at:at, prog:prog, held:held, pile:pile});
   var stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
   try{
     var url = URL.createObjectURL(new Blob([txt], {type:'application/json'}));
@@ -413,7 +439,7 @@ document.getElementById('restore-file').addEventListener('change', function(ev){
       if(!confirm('Restore this backup?\n\nLive ' + c.live + ' · Known ' + c.known +
                   ' · Not quite ' + c.notquite + ' · Important ' + c.important +
                   '\n\nEverything you have here now will be replaced.')) return;
-      piles = d.piles; order = d.order || {}; at = d.at || {}; prog = d.prog || {}; pile = d.pile || 'live';
+      piles = d.piles; order = d.order || {}; at = d.at || {}; prog = d.prog || {}; held = d.held || {}; pile = d.pile || 'live';
       fix(); cur = null; enter(); save(); render();
     }catch(e){ alert('That file is not a valid Ακουστικά backup.'); }
   };
@@ -422,7 +448,7 @@ document.getElementById('restore-file').addEventListener('change', function(ev){
 document.getElementById('reset').addEventListener('click', function(){
   if(!confirm('Reset all 50 topics back to Live?\n\nTake a Backup first if you might want them back.')) return;
   for(var n=1;n<=N;n++) piles[n] = 'live';
-  order = {}; at = {}; prog = {}; pile = 'live'; fix();
+  order = {}; at = {}; prog = {}; held = {}; pile = 'live'; fix();
   cur = null; enter(); save(); render();
 });
 
