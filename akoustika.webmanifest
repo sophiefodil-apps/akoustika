@@ -1,0 +1,31 @@
+{
+  "id": "/akoustika/?app=akoustika-2026-10-08",
+  "name": "ΠΕΓΠ Ακουστικά — Κατανόηση Προφορικού Λόγου",
+  "short_name": "Ακουστικά",
+  "start_url": "/akoustika/index.html",
+  "scope": "/akoustika/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#10232b",
+  "theme_color": "#10232b",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
