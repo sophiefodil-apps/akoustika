@@ -63,6 +63,12 @@ h1 em{font-style:italic;color:var(--accent)}
 .opt.bad{background:var(--badbg);border-color:var(--bad)}
 .opt.bad .l{color:var(--bad)}
 .opt.dim{opacity:.55}
+.opt.picked{background:#dbe8f7;border-color:#3d7ad6}
+.opt.picked .l{color:#2d63b8}
+.qb{margin-bottom:20px}
+.qb .q{font-size:18px;margin-bottom:10px}
+.nopick{font-size:13px;color:var(--bad);margin-top:6px}
+.pscore{font-weight:700;font-size:16px;color:var(--ink);border-top:1px solid #e0d7c7;padding-top:12px}
 .opt:disabled{cursor:default}
 button{font:inherit;cursor:pointer;border:none}
 #go{width:100%;margin-top:14px;background:var(--accent);color:#24180a;font-weight:700;
@@ -98,7 +104,7 @@ footer .acts{display:flex;gap:14px}
 footer .acts button{background:none;color:#9db6bf;text-decoration:underline;padding:4px 0;font-size:12.5px}
 #restore-file{display:none}
 .empty{text-align:center;color:var(--ink-soft);padding:60px 20px;font-size:17px;line-height:1.6}
-.player{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.player{position:sticky;top:0;z-index:20;box-shadow:0 6px 14px rgba(5,15,20,.55);background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
 .player .row{display:flex;align-items:center;gap:10px}
 .player button{background:var(--accent);color:#24180a;border-radius:50%;width:46px;height:46px;
   font-size:19px;font-weight:700;flex:0 0 46px;display:flex;align-items:center;justify-content:center}
@@ -141,7 +147,7 @@ footer .acts button{background:none;color:#9db6bf;text-decoration:underline;padd
 
 <div class="card" id="card"></div>
 
-<button id="go">Next question</button>
+<button id="go">Check answers</button>
 
 <div id="filing" class="hide">
   <div class="hint">Tap a pile to re-assign, then Confirm &amp; next</div>
@@ -250,14 +256,18 @@ function nextFrom(n, skipSelf){
   }
   return 0;
 }
-function stash(p){ if(p && p.n && p.ans && p.ans.length) held[p.n] = p; }
+/* A topic in progress: {n, page:0|1|2, sel:[10 picks or null], chk:[A checked, B checked], pick}
+   page 0 = Μέρος Α (all 5), page 1 = Μέρος Β (all 5), page 2 = result + filing */
+function fresh(n){ return {n:n, page:0, sel:[null,null,null,null,null,null,null,null,null,null], chk:[false,false], pick:null}; }
+function valid(p, n){ return !!(p && p.n === n && p.sel && p.sel.length === 10 && p.chk); }
+function started(p){ return !!(p && p.sel && p.chk && (p.chk[0] || p.sel.some(function(x){ return x !== null; }))); }
+function stash(p){ if(p && p.n && started(p)) held[p.n] = p; }
 function open(n){
   if(!n){ cur = null; return; }
   at[pile] = n;
   var p = prog[pile];
-  if(!(p && p.n === n && p.ans && p.ans.length <= 10)){ stash(p); p = held[n]; }
-  if(p && p.n === n && p.ans && p.ans.length <= 10) cur = p;
-  else cur = {n:n, step:0, ans:[], pick:null};
+  if(!valid(p, n)){ stash(p); p = held[n]; }
+  cur = valid(p, n) ? p : fresh(n);
   delete held[n];
 }
 /* enter the current pile at the point you left it */
@@ -270,7 +280,7 @@ function enter(){
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function wrongs(){
   var it = items(topic(cur.n)), w = [];
-  cur.ans.forEach(function(a,i){ if(a !== it[i].c) w.push(i); });
+  cur.sel.forEach(function(a,i){ if(a !== it[i].c) w.push(i); });
   return w;
 }
 
@@ -294,14 +304,16 @@ function render(){
   var dots = '<div class="dots">';
   for(var i=0;i<10;i++){
     if(i === 5) dots += '<span class="gap"></span>';
-    var cls = i < cur.ans.length ? (cur.ans[i] === it[i].c ? 'ok' : 'bad') : (i === cur.step ? 'cur' : '');
+    var part = i < 5 ? 0 : 1, cls = '';
+    if(cur.chk[part]) cls = cur.sel[i] === it[i].c ? 'ok' : 'bad';
+    else if(cur.sel[i] !== null) cls = 'cur';
     dots += '<span class="' + cls + '"></span>';
   }
   dots += '</div>';
 
   var head = '<div class="qnum"><span>Θέμα ' + t.n + '</span><span>in ' + NAMES[piles[t.n]] + '</span></div>';
 
-  if(cur.step >= 10){                       /* ---- end of topic: score + filing ---- */
+  if(cur.page >= 2){                        /* ---- end of topic: score + filing ---- */
     var w = wrongs();
     if(!cur.pick) cur.pick = w.length ? 'important' : 'known';
     var h = head + dots + '<div class="sum"><h2>Θέμα ' + t.n + ' done</h2>' +
@@ -310,7 +322,7 @@ function render(){
     w.forEach(function(i){
       var q = it[i];
       h += '<div class="miss"><div class="mq">' + (q.part === 'A' ? 'Μέρος Α' : 'Μέρος Β') + ' ' + (q.i+1) + '. ' + esc(q.q) + '</div>' +
-           '<div class="y">✗ ' + esc(label(q, cur.ans[i])) + '</div>' +
+           '<div class="y">✗ ' + (cur.sel[i] === null ? 'no answer' : esc(label(q, cur.sel[i]))) + '</div>' +
            '<div class="c">✓ ' + esc(label(q, q.c)) + '</div></div>';
     });
     h += '</div>';
@@ -322,41 +334,56 @@ function render(){
   }
 
   filing.classList.add('hide');
-  var q = it[cur.step], answered = cur.ans.length > cur.step;
+  var P = cur.page, done = cur.chk[P], base = P * 5, nSel = 0, nOk = 0;
   var h = head + dots +
-    '<div class="instr"><span class="part">ΜΕΡΟΣ ' + (q.part === 'A' ? 'Α' : 'Β') + '</span> · ' + esc(q.part === 'A' ? t.ia : t.ib) + '</div>' +
-    '<div class="q">' + (q.i+1) + '. ' + esc(q.q) + '</div>' +
-    '<div class="opts' + (q.part === 'B' ? ' tf' : '') + '">';
-  q.o.forEach(function(o,k){
-    var cls = '';
-    if(answered){
-      if(k === q.c) cls = 'ok';
-      else if(k === cur.ans[cur.step]) cls = 'bad';
-      else cls = 'dim';
+    '<div class="instr"><span class="part">ΜΕΡΟΣ ' + (P === 0 ? 'Α' : 'Β') + '</span> · ' + esc(P === 0 ? t.ia : t.ib) + '</div>';
+  for(var j=0;j<5;j++){
+    var gi = base + j, q = it[gi], s = cur.sel[gi];
+    if(s !== null) nSel++;
+    if(s === q.c) nOk++;
+    h += '<div class="qb"><div class="q">' + (j+1) + '. ' + esc(q.q) + '</div>' +
+         '<div class="opts' + (P === 1 ? ' tf' : '') + '">';
+    for(var k=0;k<q.o.length;k++){
+      var oc = '';
+      if(done){
+        if(k === q.c) oc = 'ok';
+        else if(k === s) oc = 'bad';
+        else oc = 'dim';
+      } else if(k === s) oc = 'picked';
+      h += '<button class="opt ' + oc + '" data-i="' + gi + '" data-k="' + k + '"' + (done ? ' disabled' : '') + '>' +
+           (P === 0 ? '<span class="l">' + LET[k] + ')</span>' : '') + '<span>' + esc(q.o[k]) + '</span></button>';
     }
-    h += '<button class="opt ' + cls + '" data-k="' + k + '"' + (answered ? ' disabled' : '') + '>' +
-         (q.part === 'A' ? '<span class="l">' + LET[k] + ')</span>' : '') + '<span>' + esc(o) + '</span></button>';
-  });
-  h += '</div>';
+    h += '</div>' + (done && s === null ? '<div class="nopick">no answer given</div>' : '') + '</div>';
+  }
+  if(done) h += '<div class="pscore">Μέρος ' + (P === 0 ? 'Α' : 'Β') + ': ' + nOk + ' / 5 correct</div>';
   box.innerHTML = h;
   [].forEach.call(box.querySelectorAll('.opt'), function(b){
-    b.addEventListener('click', function(){ answer(+b.dataset.k); });
+    b.addEventListener('click', function(){ choose(+b.dataset.i, +b.dataset.k); });
   });
-  go.textContent = cur.step === 9 ? 'See result' : 'Next question';
-  go.classList.toggle('hide', !answered);
+  go.classList.remove('hide');
+  if(!done) go.textContent = nSel < 5 ? 'Check answers (' + nSel + '/5 answered)' : 'Check answers';
+  else go.textContent = P === 0 ? 'Next: Μέρος Β →' : 'See result →';
 }
 function label(q,k){ return q.part === 'A' ? LET[k] + ') ' + q.o[k] : q.o[k]; }
 
-function answer(k){
-  if(!cur || cur.ans.length > cur.step) return;
-  cur.ans.push(k);
+function choose(i, k){
+  if(!cur || cur.page > 1 || cur.chk[cur.page]) return;
+  cur.sel[i] = (cur.sel[i] === k) ? null : k;      /* tap the same answer again to un-pick it */
   save(); render();
 }
 function goNext(){
   if(!cur) return;
-  if(cur.step < 10){
-    if(cur.ans.length <= cur.step) return;
-    cur.step++; save(); render(); window.scrollTo(0,0); return;
+  if(cur.page < 2){
+    var P = cur.page;
+    if(!cur.chk[P]){
+      var miss = cur.sel.slice(P*5, P*5+5).filter(function(x){ return x === null; }).length;
+      if(miss && !confirm(miss + ' question(s) not answered yet.\n\nCheck anyway? Unanswered ones count as wrong.')) return;
+      cur.chk[P] = true; save(); render();
+      var r = document.getElementById('card').getBoundingClientRect();
+      window.scrollTo(0, window.scrollY + r.top - 8);
+      return;
+    }
+    cur.page++; save(); render(); window.scrollTo(0,0); return;
   }
   /* confirm: file the whole topic, then move on */
   var n = cur.n;
@@ -406,7 +433,7 @@ document.getElementById('shuffle').addEventListener('click', function(){
 });
 [].forEach.call(document.querySelectorAll('.sort'), function(b){
   b.addEventListener('click', function(){
-    if(!cur || cur.step < 10) return;
+    if(!cur || cur.page < 2) return;
     cur.pick = b.dataset.p; save(); render();
   });
 });
