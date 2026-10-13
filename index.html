@@ -74,6 +74,15 @@ button{font:inherit;cursor:pointer;border:none}
 #go{width:100%;margin-top:14px;background:var(--accent);color:#24180a;font-weight:700;
   font-size:17px;padding:15px;border-radius:10px}
 #go:active{background:var(--accent-dk)}
+#go2{width:100%;margin-top:10px;background:var(--bg2);border:1px solid var(--line);color:#cfe0e5;
+  font-size:15px;padding:12px;border-radius:10px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px}
+.tabs button{background:#e9e2d4;color:#5f6d72;border:2px solid #e9e2d4;border-radius:9px;padding:9px 6px;
+  font-size:14.5px;font-weight:700;letter-spacing:.3px}
+.tabs button.on{background:#fffdf7;color:var(--ink);border-color:var(--accent-dk)}
+.tabs button .sc{font-weight:400;font-size:13px;margin-left:4px}
+.tabs button .sc.ok{color:var(--ok)}
+.tabs button .sc.bad{color:var(--bad)}
 .sum h2{font-family:Georgia,serif;font-size:24px;margin:2px 0 4px}
 .sum .score{font-size:16px;color:var(--ink-soft);margin-bottom:14px}
 .miss{border-top:1px solid #e0d7c7;padding:10px 0;font-size:15px;line-height:1.4}
@@ -148,6 +157,7 @@ footer .acts button{background:none;color:#9db6bf;text-decoration:underline;padd
 <div class="card" id="card"></div>
 
 <button id="go">Check answers</button>
+<button id="go2" class="hide"></button>
 
 <div id="filing" class="hide">
   <div class="hint">Tap a pile to re-assign, then Confirm &amp; next</div>
@@ -280,10 +290,24 @@ function enter(){
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function wrongs(){
   var it = items(topic(cur.n)), w = [];
-  cur.sel.forEach(function(a,i){ if(a !== it[i].c) w.push(i); });
+  cur.sel.forEach(function(a,i){ if(cur.chk[i < 5 ? 0 : 1] && a !== it[i].c) w.push(i); });
   return w;
 }
 
+function partScore(P){
+  var it = items(topic(cur.n)), ok = 0;
+  for(var i=P*5;i<P*5+5;i++) if(cur.sel[i] === it[i].c) ok++;
+  return ok;
+}
+function tabsHtml(){
+  var h = '<div class="tabs">';
+  for(var P=0;P<2;P++){
+    var sc = '';
+    if(cur.chk[P]){ var k = partScore(P); sc = '<span class="sc ' + (k === 5 ? 'ok' : 'bad') + '">' + k + '/5</span>'; }
+    h += '<button data-pg="' + P + '"' + (cur.page === P ? ' class="on"' : '') + '>Μέρος ' + (P === 0 ? 'Α' : 'Β') + sc + '</button>';
+  }
+  return h + '</div>';
+}
 function render(){
   setTimeout(function(){ if(typeof syncAudio === 'function') syncAudio(); }, 0);
   var c = counts();
@@ -316,8 +340,10 @@ function render(){
   if(cur.page >= 2){                        /* ---- end of topic: score + filing ---- */
     var w = wrongs();
     if(!cur.pick) cur.pick = w.length ? 'important' : 'known';
-    var h = head + dots + '<div class="sum"><h2>Θέμα ' + t.n + ' done</h2>' +
-            '<div class="score">' + (10 - w.length) + ' / 10 correct</div>';
+    var tot = (cur.chk[0] ? 5 : 0) + (cur.chk[1] ? 5 : 0);
+    var only = tot === 5 ? ' · Μέρος ' + (cur.chk[0] ? 'Α' : 'Β') + ' only' : '';
+    var h = head + tabsHtml() + dots + '<div class="sum"><h2>Θέμα ' + t.n + ' done</h2>' +
+            '<div class="score">' + (tot - w.length) + ' / ' + tot + ' correct' + only + '</div>';
     if(!w.length) h += '<div class="allok">All correct</div>';
     w.forEach(function(i){
       var q = it[i];
@@ -326,7 +352,8 @@ function render(){
            '<div class="c">✓ ' + esc(label(q, q.c)) + '</div></div>';
     });
     h += '</div>';
-    box.innerHTML = h;
+    box.innerHTML = h; wireTabs(box);
+    document.getElementById('go2').classList.add('hide');
     go.textContent = 'Confirm → ' + NAMES[cur.pick] + ' & next';
     go.classList.remove('hide'); filing.classList.remove('hide');
     [].forEach.call(document.querySelectorAll('.sort'), function(b){ b.classList.toggle('pick', b.dataset.p === cur.pick); });
@@ -335,7 +362,7 @@ function render(){
 
   filing.classList.add('hide');
   var P = cur.page, done = cur.chk[P], base = P * 5, nSel = 0, nOk = 0;
-  var h = head + dots +
+  var h = head + tabsHtml() + dots +
     '<div class="instr"><span class="part">ΜΕΡΟΣ ' + (P === 0 ? 'Α' : 'Β') + '</span> · ' + esc(P === 0 ? t.ia : t.ib) + '</div>';
   for(var j=0;j<5;j++){
     var gi = base + j, q = it[gi], s = cur.sel[gi];
@@ -356,13 +383,27 @@ function render(){
     h += '</div>' + (done && s === null ? '<div class="nopick">no answer given</div>' : '') + '</div>';
   }
   if(done) h += '<div class="pscore">Μέρος ' + (P === 0 ? 'Α' : 'Β') + ': ' + nOk + ' / 5 correct</div>';
-  box.innerHTML = h;
+  box.innerHTML = h; wireTabs(box);
   [].forEach.call(box.querySelectorAll('.opt'), function(b){
     b.addEventListener('click', function(){ choose(+b.dataset.i, +b.dataset.k); });
   });
   go.classList.remove('hide');
+  var go2 = document.getElementById('go2'), other = cur.chk[1 - P];
   if(!done) go.textContent = nSel < 5 ? 'Check answers (' + nSel + '/5 answered)' : 'Check answers';
-  else go.textContent = P === 0 ? 'Next: Μέρος Β →' : 'See result →';
+  else go.textContent = (P === 0 && !other) ? 'Next: Μέρος Β →' : 'See result →';
+  go2.textContent = 'See result now (Μέρος Α only)';
+  go2.classList.toggle('hide', !(done && P === 0 && !other));
+}
+function wireTabs(box){
+  [].forEach.call(box.querySelectorAll('.tabs button'), function(b){
+    b.addEventListener('click', function(){
+      var P = +b.dataset.pg;
+      if(cur.page === P) return;
+      cur.page = P; save(); render();
+      var r = document.getElementById('card').getBoundingClientRect();
+      if(r.top < 0) window.scrollTo(0, window.scrollY + r.top - 8);
+    });
+  });
 }
 function label(q,k){ return q.part === 'A' ? LET[k] + ') ' + q.o[k] : q.o[k]; }
 
@@ -378,12 +419,12 @@ function goNext(){
     if(!cur.chk[P]){
       var miss = cur.sel.slice(P*5, P*5+5).filter(function(x){ return x === null; }).length;
       if(miss && !confirm(miss + ' question(s) not answered yet.\n\nCheck anyway? Unanswered ones count as wrong.')) return;
-      cur.chk[P] = true; save(); render();
+      cur.chk[P] = true; cur.pick = null; save(); render();
       var r = document.getElementById('card').getBoundingClientRect();
       window.scrollTo(0, window.scrollY + r.top - 8);
       return;
     }
-    cur.page++; save(); render(); window.scrollTo(0,0); return;
+    cur.page = (P === 0 && !cur.chk[1]) ? 1 : 2; save(); render(); window.scrollTo(0,0); return;
   }
   /* confirm: file the whole topic, then move on */
   var n = cur.n;
@@ -403,6 +444,10 @@ function step(d){            /* Back / Skip between topics without filing */
 }
 
 document.getElementById('go').addEventListener('click', goNext);
+document.getElementById('go2').addEventListener('click', function(){
+  if(!cur || !(cur.chk[0] || cur.chk[1])) return;
+  cur.page = 2; save(); render(); window.scrollTo(0,0);
+});
 document.getElementById('skip').addEventListener('click', function(){ step(1); });
 function jump(){
   var box = document.getElementById('jump-n'), n = parseInt(box.value, 10);
